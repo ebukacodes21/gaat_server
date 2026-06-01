@@ -15,7 +15,6 @@ import (
 	"app/handler"
 	"app/service"
 
-	runner "app/repository"
 	repository "app/repository/sqlc"
 	"app/utils"
 )
@@ -58,8 +57,6 @@ func init() {
 		)
 		panic(err)
 	}
-
-	runner.RunDBMigration(dbURL)
 
 	maker, err := utils.NewToken(os.Getenv("PRIVATE_KEY"))
 	if err != nil {

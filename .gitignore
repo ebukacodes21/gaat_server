@@ -3,3 +3,4 @@ samconfig.toml
 Makefile
 /events
 .aws-sam
+.env

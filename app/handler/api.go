@@ -273,6 +273,25 @@ func (gs *GaatServer) UserLoans(c *gin.Context) {
 	})
 }
 
+func (gs *GaatServer) UserDeposits(c *gin.Context) {
+	payload := c.MustGet(utils.AuthorizationPayloadKey).(*utils.Payload)
+
+	page := utils.ParseInt32(c.DefaultQuery("page", "1"))
+	pageSize := utils.ParseInt32(c.DefaultQuery("page_size", "10"))
+
+	deposits, err := gs.service.GetUserDeposits(c, payload.UserId, page, pageSize)
+	if err != nil {
+		code, msg := utils.TranslateDomainError(err)
+		c.JSON(code, gin.H{"error": msg})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "account deposits retrieved",
+		"data":    deposits,
+	})
+}
+
 func (gs *GaatServer) ListLoans(c *gin.Context) {
 	page := utils.ParseInt32(c.DefaultQuery("page", "1"))
 	pageSize := utils.ParseInt32(c.DefaultQuery("page_size", "10"))
@@ -377,25 +396,6 @@ func (gs *GaatServer) ManageLoan(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "loan action dispatched!",
-	})
-}
-
-func (gs *GaatServer) UserDeposits(c *gin.Context) {
-	payload := c.MustGet(utils.AuthorizationPayloadKey).(*utils.Payload)
-
-	page := utils.ParseInt32(c.DefaultQuery("page", "1"))
-	pageSize := utils.ParseInt32(c.DefaultQuery("page_size", "10"))
-
-	deposits, err := gs.service.GetUserDeposits(c, payload.UserId, page, pageSize)
-	if err != nil {
-		code, msg := utils.TranslateDomainError(err)
-		c.JSON(code, gin.H{"error": msg})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "account deposits retrieved",
-		"data":    deposits,
 	})
 }
 

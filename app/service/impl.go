@@ -616,6 +616,7 @@ func (s *Service) GetUserLoans(ctx context.Context, userID string, page int32, p
 
 	total, err := s.repo.CountLoansByUserID(ctx, id)
 	if err != nil {
+		log.Print(err)
 		return nil, utils.NewInternalError("unable to count user loans", err)
 	}
 
@@ -625,6 +626,7 @@ func (s *Service) GetUserLoans(ctx context.Context, userID string, page int32, p
 		Offset: offset,
 	})
 	if err != nil {
+		log.Print(err)
 		return nil, utils.NewInternalError("unable to get user loans", err)
 	}
 
@@ -662,6 +664,7 @@ func (s *Service) GetUserDeposits(ctx context.Context, userID string, page int32
 
 	total, err := s.repo.CountDepositsByUserID(ctx, id)
 	if err != nil {
+		log.Print(err)
 		return nil, utils.NewInternalError("unable to count user deposits", err)
 	}
 
@@ -671,6 +674,7 @@ func (s *Service) GetUserDeposits(ctx context.Context, userID string, page int32
 		Offset: offset,
 	})
 	if err != nil {
+		log.Print(err)
 		return nil, utils.NewInternalError("unable to get user deposits", err)
 	}
 
