@@ -79,26 +79,19 @@ func (s *Service) RegisterAccount(ctx context.Context, input *types.CreateUserIn
 			VerificationCodeExpiresAt: sql.NullTime{Time: expiry, Valid: true},
 		},
 		AfterCreate: func(u repository.User) error {
-			content := fmt.Sprintf(`
-			Hello %s,
-
-			Welcome to GAAT Investment.
-
-			Your verification code is:
-
-			%s
-
-			This code expires %s.
+			title := "Verification Code"
+			body := fmt.Sprintf(`
+				<p>Hello %s,</p>
+				<p>Welcome to GAAT Investment. Please use the verification code below to proceed:</p>
+				<div style="background: #211E1B; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; color: #E6A15C; letter-spacing: 5px; border-radius: 8px; margin: 20px 0;">
+					%s
+				</div>
+				<p style="font-size: 12px; color: #A39990;">This code expires on %s.</p>
 			`, u.FirstName, u.VerificationCode.String, expiry.Format("02 Jan 2006 15:04 PM"))
+			action := ""
+			content := fmt.Sprintf(utils.EmailTemplate, title, body, action)
 
-			if err := s.mailer.SendMail(
-				"Welcome Mail",
-				content,
-				[]string{u.Email},
-				nil,
-				nil,
-				nil,
-			); err != nil {
+			if err := s.mailer.SendMail("Welcome Mail", content, []string{u.Email}, nil, nil, nil); err != nil {
 				s.logger.Error("failed to send email %v", zap.Error(err))
 			}
 			return nil
@@ -173,16 +166,22 @@ func (s *Service) ResendOTP(ctx context.Context, email string) (*types.ServiceRe
 
 	code := utils.GenerateCode()
 	expiry := time.Now().Add(time.Minute * 3)
-	content := fmt.Sprintf(`
-		Hello %s,
 
-		Your new verification code is:
-
-		%s
-
-		This code expires %s.
-
+	title := "Resend Verification Code"
+	body := fmt.Sprintf(`
+		<p>Hello %s,</p>
+		<p>You recently requested to resend your verification code for GAAT Investment.</p>
+		<p>Your new verification code is:</p>
+		<div style="background: #211E1B; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; color: #E6A15C; letter-spacing: 5px; border-radius: 8px; margin: 20px 0;">
+			%s
+		</div>
+		<p style="font-size: 12px; color: #A39990;">This code expires on %s.</p>
 	`, user.FirstName, code, expiry.Format("02 Jan 2006 15:04 PM"))
+
+	action := ""
+
+	// 3. Assemble using your base email template
+	content := fmt.Sprintf(utils.EmailTemplate, title, body, action)
 
 	_, err = s.repo.UpdateUser(ctx, repository.UpdateUserParams{
 		VerificationCode:          sql.NullString{String: code, Valid: true},
@@ -270,31 +269,23 @@ func (s *Service) Forgot(ctx context.Context, email string) (*types.ServiceResul
 
 	resetURL := fmt.Sprintf("%s/auth/reset?token=%s", os.Getenv("FRONTEND_URL"), token)
 
-	content := fmt.Sprintf(`
-		<h2>Password Reset Request</h2>
+	title := "Password Reset Request"
 
-		<p>Hello %s %s,</p>
+	body := fmt.Sprintf(`
+    <p>Hello %s %s,</p>
+    <p>You requested to reset your GAAT Investment password. If you did not make this request, please ignore this email.</p>
+    <p style="color: #A39990; font-size: 14px;">This link will expire in 5 minutes.</p>
+	`, user.FirstName, user.LastName)
 
-		<p>You requested to reset your GAAT Investment password.</p>
+	action := fmt.Sprintf(`
+    <div style="text-align: center; margin: 25px 0;">
+        <a href="%s" style="background-color: #E6A15C; color: #1A1816; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+            Reset My Password
+        </a>
+    </div>
+	`, resetURL)
 
-		<p>
-			Click the link below to reset your password:
-		</p>
-
-		<p>
-			<a href="%s">Reset Password</a>
-		</p>
-
-		<p>
-			This link expires in 5 minutes.
-		</p>
-	`,
-		user.FirstName,
-		user.LastName,
-		resetURL,
-	)
-
-	log.Print(content)
+	content := fmt.Sprintf(utils.EmailTemplate, title, body, action)
 
 	if err := s.mailer.SendMail("Password Reset Request", content, []string{user.Email}, nil, nil, nil); err != nil {
 		s.logger.Error("failed sending password reset email", zap.Error(err))
@@ -532,37 +523,55 @@ func (s *Service) UpdatePassword(ctx context.Context, userID string, input types
 	}
 
 	user, err := s.repo.GetUserByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, utils.NewNotFoundError("user not found", err)
+	if err == nil {
+		if err := utils.CheckPassword(input.OldPassword, user.Password); err != nil {
+			return nil, utils.NewUnathenticatedError("incorrect current password")
 		}
+
+		hashedPassword, err := utils.HashPassword(input.NewPassword)
+		if err != nil {
+			return nil, utils.NewInternalError("failed to hash password", err)
+		}
+
+		if err := s.repo.UpdatePassword(ctx, repository.UpdatePasswordParams{
+			ID:       user.ID,
+			Password: hashedPassword,
+		}); err != nil {
+			return nil, utils.NewInternalError("failed to update password", err)
+		}
+
+		return &types.ServiceResult{Message: "password updated successfully"}, nil
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, utils.NewInternalError("failed to fetch user", err)
 	}
 
-	// 1. verify old password
-	err = utils.CheckPassword(input.OldPassword, user.Password)
+	staff, err := s.repo.GetStaffWithPassword(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, utils.NewNotFoundError("user or staff not found", err)
+		}
+		return nil, utils.NewInternalError("failed to fetch staff", err)
+	}
+
+	if err := utils.CheckPassword(input.OldPassword, staff.PasswordHash); err != nil {
 		return nil, utils.NewUnathenticatedError("incorrect current password")
 	}
 
-	// 2. hash new password
 	hashedPassword, err := utils.HashPassword(input.NewPassword)
 	if err != nil {
 		return nil, utils.NewInternalError("failed to hash password", err)
 	}
 
-	// 3. update DB
-	err = s.repo.UpdatePassword(ctx, repository.UpdatePasswordParams{
-		ID:       user.ID,
-		Password: hashedPassword,
-	})
-	if err != nil {
-		return nil, utils.NewInternalError("failed to update password", err)
+	if err := s.repo.UpdateStaffPassword(ctx, repository.UpdateStaffPasswordParams{
+		ID:           staff.ID,
+		PasswordHash: hashedPassword,
+	}); err != nil {
+		return nil, utils.NewInternalError("failed to update staff password", err)
 	}
 
-	return &types.ServiceResult{
-		Message: "password updated successfully",
-	}, nil
+	return &types.ServiceResult{Message: "password updated successfully"}, nil
 }
 
 func (s *Service) ListLoanTypes(ctx context.Context) ([]*types.LoanType, error) {
@@ -947,6 +956,11 @@ func (s *Service) ManageLoan(ctx context.Context, req types.ManageInput) error {
 		return utils.NewInternalError("failed to update loan status", err)
 	}
 
+	link := fmt.Sprintf("%s/dashboard", os.Getenv("FRONTEND_URL"))
+	if err := s.sendLoanEmail(loan, action, link); err != nil {
+		s.logger.Error("unable to send loan application mail", zap.Error(err))
+	}
+
 	return nil
 }
 
@@ -1224,7 +1238,7 @@ func (s *Service) CreateStaff(ctx context.Context, req types.CreateStaffRequest)
 		return utils.NewInternalError("unable to create staff", err)
 	}
 
-	loginURL := fmt.Sprintf("%s/auth/login", os.Getenv("FRONTEND_URL"))
+	loginURL := fmt.Sprintf("%s/auth/login-employee", os.Getenv("FRONTEND_URL"))
 	content := fmt.Sprintf(`
         <div style="font-family: sans-serif; line-height: 1.6; color: #333;">
             <h2 style="color: #D61F28;">Welcome to the Team</h2>
@@ -1331,20 +1345,20 @@ func (s *Service) UpdateStaff(ctx context.Context, req types.UpdateStaffRequest)
 	_, err = s.repo.GetStaffByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return utils.NewNotFoundError("staff type not found", err)
+			return utils.NewNotFoundError("staff not found", err)
 		}
 
-		return utils.NewInternalError("failed to fetch staff type", err)
+		return utils.NewInternalError("failed to fetch staff", err)
 	}
 
 	args := repository.UpdateStaffParams{
 		ID:       id,
-		FullName: sql.NullString{Valid: req.Name != "", String: req.Name},
+		FullName: sql.NullString{Valid: req.FullName != "", String: req.FullName},
 		Role:     repository.NullUserRole{Valid: req.Role != "", UserRole: repository.UserRole(req.Role)},
 	}
 
 	if err := s.repo.UpdateStaff(ctx, args); err != nil {
-		return utils.NewInternalError("unable to update loan type", err)
+		return utils.NewInternalError("unable to update staff", err)
 	}
 
 	return nil
@@ -1391,6 +1405,34 @@ func (s *Service) ManageStaff(ctx context.Context, req types.StaffAction) error 
 	}
 
 	return nil
+}
+
+func (s *Service) sendLoanEmail(loan repository.Loan, status string, actionLink string) error {
+	title := fmt.Sprintf("Loan Update: %s", strings.ToUpper(status))
+
+	summary := fmt.Sprintf(`
+        <div style="background-color: #211E1B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <table style="width: 100%%; border-collapse: collapse; color: #E6E1DC;">
+                <tr><td style="padding: 5px 0; color: #8C8176;">Reference:</td><td style="text-align: right;">%s</td></tr>
+                <tr><td style="padding: 5px 0; color: #8C8176;">Loan Type:</td><td style="text-align: right;">%s</td></tr>
+                <tr><td style="padding: 5px 0; color: #8C8176;">Amount:</td><td style="text-align: right;">₦%s</td></tr>
+                <tr><td style="padding: 5px 0; color: #8C8176;">Status:</td><td style="text-align: right; color: #E6A15C;">%s</td></tr>
+            </table>
+        </div>`, loan.ID, loan.LoanType, utils.FormatWithCommas(loan.PrincipalAmount), strings.ToUpper(status))
+
+	body := fmt.Sprintf("<p>Hello %s,</p><p>Your loan application status has been updated to <strong>%s</strong>.</p>", loan.BorrowerName, status)
+	body += summary
+
+	action := ""
+	if actionLink != "" {
+		action = fmt.Sprintf(`<a href="%s" style="background-color: #E6A15C; color: #1A1816; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">View Application</a>`, actionLink)
+	}
+
+	content := strings.Replace(utils.EmailTemplate, "{{TITLE}}", title, 1)
+	content = strings.Replace(content, "{{BODY}}", body, 1)
+	content = strings.Replace(content, "{{ACTION}}", action, 1)
+
+	return s.mailer.SendMail("Loan Application", content, []string{loan.Email}, nil, nil, nil)
 }
 
 func mapLoan(loan repository.Loan) *types.Loan {

@@ -109,3 +109,10 @@ func ParsePhone(phone string) error {
 
 	return nil
 }
+
+func FormatWithCommas(n string) string {
+	if len(n) <= 3 {
+		return n
+	}
+	return FormatWithCommas(n[:len(n)-3]) + "," + n[len(n)-3:]
+}

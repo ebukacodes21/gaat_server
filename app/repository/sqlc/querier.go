@@ -38,6 +38,7 @@ type Querier interface {
 	GetLoansByUserID(ctx context.Context, arg GetLoansByUserIDParams) ([]Loan, error)
 	GetStaffByEmail(ctx context.Context, email string) (Staff, error)
 	GetStaffByID(ctx context.Context, id uuid.UUID) (GetStaffByIDRow, error)
+	GetStaffWithPassword(ctx context.Context, id uuid.UUID) (GetStaffWithPasswordRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
 	GetUserForLogin(ctx context.Context, email string) (GetUserForLoginRow, error)
@@ -50,6 +51,7 @@ type Querier interface {
 	UpdateLoanType(ctx context.Context, arg UpdateLoanTypeParams) error
 	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error
 	UpdateStaff(ctx context.Context, arg UpdateStaffParams) error
+	UpdateStaffPassword(ctx context.Context, arg UpdateStaffPasswordParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error

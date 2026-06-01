@@ -1030,6 +1030,37 @@ func (q *Queries) GetStaffByID(ctx context.Context, id uuid.UUID) (GetStaffByIDR
 	return i, err
 }
 
+const getStaffWithPassword = `-- name: GetStaffWithPassword :one
+SELECT id, email, full_name, password_hash, role, account_enabled, created_at
+FROM staffs
+WHERE id = $1 LIMIT 1
+`
+
+type GetStaffWithPasswordRow struct {
+	ID             uuid.UUID    `db:"id" json:"id"`
+	Email          string       `db:"email" json:"email"`
+	FullName       string       `db:"full_name" json:"full_name"`
+	PasswordHash   string       `db:"password_hash" json:"password_hash"`
+	Role           NullUserRole `db:"role" json:"role"`
+	AccountEnabled sql.NullBool `db:"account_enabled" json:"account_enabled"`
+	CreatedAt      sql.NullTime `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) GetStaffWithPassword(ctx context.Context, id uuid.UUID) (GetStaffWithPasswordRow, error) {
+	row := q.db.QueryRowContext(ctx, getStaffWithPassword, id)
+	var i GetStaffWithPasswordRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.FullName,
+		&i.PasswordHash,
+		&i.Role,
+		&i.AccountEnabled,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password, email_verified, role, verification_code, verification_code_expires_at, account_enabled, last_login, first_name, last_name, address, lga, zip_code, about_us, state, gender, marital_status, phone1, phone2, occupation, terms_accepted, img_url, created_at, updated_at FROM users
 WHERE email = $1 LIMIT 1
@@ -1458,6 +1489,22 @@ func (q *Queries) UpdateStaff(ctx context.Context, arg UpdateStaffParams) error 
 		arg.Role,
 		arg.AccountEnabled,
 	)
+	return err
+}
+
+const updateStaffPassword = `-- name: UpdateStaffPassword :exec
+UPDATE staffs
+SET password_hash = $2
+WHERE id = $1
+`
+
+type UpdateStaffPasswordParams struct {
+	ID           uuid.UUID `db:"id" json:"id"`
+	PasswordHash string    `db:"password_hash" json:"password_hash"`
+}
+
+func (q *Queries) UpdateStaffPassword(ctx context.Context, arg UpdateStaffPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updateStaffPassword, arg.ID, arg.PasswordHash)
 	return err
 }
 

@@ -12,13 +12,28 @@ import (
 	"github.com/jordan-wright/email"
 )
 
-const (
+var (
 	// smtpAuthAddr   = "smtp.gmail.com"
 	// smtpServerAddr = "smtp.gmail.com:465"
 
-	smtpAuthAddr   = "gaatinvestment.com"
-	smtpServerAddr = "gaatinvestment.com:465"
+	smtpAuthAddr   = os.Getenv("SMTP_AUTH_ADDR")
+	smtpServerAddr = os.Getenv("SMTP_SERVER_ADDR")
 )
+
+const EmailTemplate = `
+<div style="font-family: sans-serif; line-height: 1.6; color: #E6E1DC; background-color: #1A1816; padding: 30px; border-radius: 12px; border: 1px solid #332D28; max-width: 600px; margin: auto;">
+    <h2 style="color: #E6A15C; margin-top: 0;">%s</h2>
+    <div style="color: #E6E1DC;">
+        %s
+    </div>
+    <div style="margin: 25px 0;">
+        %s
+    </div>
+    <div style="border-top: 1px solid #332D28; margin-top: 30px; padding-top: 20px; text-align: center;">
+        <p style="font-size: 14px; font-weight: bold; color: #FAF8F5; margin-bottom: 5px;">GAAT Investment Limited</p>
+        <p style="font-size: 12px; color: #8C8176;">&copy; 2026 GAAT Investment Limited. All rights reserved.</p>
+    </div>
+</div>`
 
 type Mailer interface {
 	SendMail(subject, content string, to, cc, bcc, attachFiles []string) error

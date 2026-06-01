@@ -149,9 +149,9 @@ type UpdateLoanTypeRequest struct {
 }
 
 type UpdateStaffRequest struct {
-	ID   string `json:"id" binding:"required,uuid"`
-	Name string `json:"name" binding:"required"`
-	Role Role   `json:"role" binding:"required,oneof=admin staff supervisor"`
+	ID       string `json:"id" binding:"required,uuid"`
+	FullName string `json:"full_name" binding:"required"`
+	Role     Role   `json:"role" binding:"required,oneof=admin staff supervisor"`
 }
 
 type RequestLoanInput struct {

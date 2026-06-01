@@ -142,6 +142,12 @@ UPDATE users
 SET password = $2
 WHERE id = $1;
 
+
+-- name: UpdateStaffPassword :exec
+UPDATE staffs
+SET password_hash = $2
+WHERE id = $1;
+
 -- name: UpdateUserStatus :exec
 UPDATE users
 SET account_enabled = $2
@@ -385,6 +391,12 @@ OFFSET $2;
 
 -- name: GetStaffByID :one
 SELECT id, email, full_name, role, account_enabled, created_at
+FROM staffs
+WHERE id = $1 LIMIT 1;
+
+
+-- name: GetStaffWithPassword :one
+SELECT id, email, full_name, password_hash, role, account_enabled, created_at
 FROM staffs
 WHERE id = $1 LIMIT 1;
 
