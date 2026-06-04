@@ -73,46 +73,47 @@ type Deposit struct {
 }
 
 type Loan struct {
-	ID                 uuid.UUID      `db:"id" json:"id"`
-	LoanType           string         `db:"loan_type" json:"loan_type"`
-	PrincipalAmount    string         `db:"principal_amount" json:"principal_amount"`
-	InterestRate       string         `db:"interest_rate" json:"interest_rate"`
-	TermMonths         sql.NullInt32  `db:"term_months" json:"term_months"`
-	MonthlyPayment     sql.NullString `db:"monthly_payment" json:"monthly_payment"`
-	AdminFee           string         `db:"admin_fee" json:"admin_fee"`
-	TotalInterest      sql.NullString `db:"total_interest" json:"total_interest"`
-	TotalRepayment     sql.NullString `db:"total_repayment" json:"total_repayment"`
-	TotalRepaid        string         `db:"total_repaid" json:"total_repaid"`
-	TotalUnpaid        string         `db:"total_unpaid" json:"total_unpaid"`
-	NumberOfRepayments int32          `db:"number_of_repayments" json:"number_of_repayments"`
-	Status             string         `db:"status" json:"status"`
-	DueDate            sql.NullTime   `db:"due_date" json:"due_date"`
-	ApprovedDate       sql.NullTime   `db:"approved_date" json:"approved_date"`
-	NextPaymentDate    sql.NullTime   `db:"next_payment_date" json:"next_payment_date"`
-	Collateral         string         `db:"collateral" json:"collateral"`
-	BorrowerName       string         `db:"borrower_name" json:"borrower_name"`
-	Email              string         `db:"email" json:"email"`
-	GuarantorName      sql.NullString `db:"guarantor_name" json:"guarantor_name"`
-	GuarantorEmail     sql.NullString `db:"guarantor_email" json:"guarantor_email"`
-	GuarantorPhone     sql.NullString `db:"guarantor_phone" json:"guarantor_phone"`
-	GuarantorIppisNo   sql.NullString `db:"guarantor_ippis_no" json:"guarantor_ippis_no"`
-	BankName           sql.NullString `db:"bank_name" json:"bank_name"`
-	AccountNumber      sql.NullString `db:"account_number" json:"account_number"`
-	AccountHolder      sql.NullString `db:"account_holder" json:"account_holder"`
-	Bvn                sql.NullString `db:"bvn" json:"bvn"`
-	Occupation         sql.NullString `db:"occupation" json:"occupation"`
-	EmployerName       sql.NullString `db:"employer_name" json:"employer_name"`
-	EmployerAddress    sql.NullString `db:"employer_address" json:"employer_address"`
-	EmployerPhone      sql.NullString `db:"employer_phone" json:"employer_phone"`
-	IppisNo            sql.NullString `db:"ippis_no" json:"ippis_no"`
-	Statement          sql.NullString `db:"statement" json:"statement"`
-	AdminFeeReceipt    sql.NullString `db:"admin_fee_receipt" json:"admin_fee_receipt"`
-	CollateralDocument sql.NullString `db:"collateral_document" json:"collateral_document"`
-	LoanInterest       sql.NullString `db:"loan_interest" json:"loan_interest"`
-	UserID             uuid.UUID      `db:"user_id" json:"user_id"`
-	LoanTypeID         uuid.UUID      `db:"loan_type_id" json:"loan_type_id"`
-	CreatedAt          time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt          time.Time      `db:"updated_at" json:"updated_at"`
+	ID                               uuid.UUID      `db:"id" json:"id"`
+	LoanType                         string         `db:"loan_type" json:"loan_type"`
+	PrincipalAmount                  string         `db:"principal_amount" json:"principal_amount"`
+	InterestRate                     string         `db:"interest_rate" json:"interest_rate"`
+	TermMonths                       sql.NullInt32  `db:"term_months" json:"term_months"`
+	MonthlyPayment                   sql.NullString `db:"monthly_payment" json:"monthly_payment"`
+	AdminFee                         string         `db:"admin_fee" json:"admin_fee"`
+	TotalInterest                    sql.NullString `db:"total_interest" json:"total_interest"`
+	TotalRepayment                   sql.NullString `db:"total_repayment" json:"total_repayment"`
+	TotalRepaid                      string         `db:"total_repaid" json:"total_repaid"`
+	TotalUnpaid                      string         `db:"total_unpaid" json:"total_unpaid"`
+	NumberOfRepayments               int32          `db:"number_of_repayments" json:"number_of_repayments"`
+	Status                           string         `db:"status" json:"status"`
+	DueDate                          sql.NullTime   `db:"due_date" json:"due_date"`
+	ApprovedDate                     sql.NullTime   `db:"approved_date" json:"approved_date"`
+	NextPaymentDate                  sql.NullTime   `db:"next_payment_date" json:"next_payment_date"`
+	Collateral                       string         `db:"collateral" json:"collateral"`
+	BorrowerName                     string         `db:"borrower_name" json:"borrower_name"`
+	Email                            string         `db:"email" json:"email"`
+	GuarantorName                    sql.NullString `db:"guarantor_name" json:"guarantor_name"`
+	GuarantorEmail                   sql.NullString `db:"guarantor_email" json:"guarantor_email"`
+	GuarantorPhone                   sql.NullString `db:"guarantor_phone" json:"guarantor_phone"`
+	GuarantorIppisNo                 sql.NullString `db:"guarantor_ippis_no" json:"guarantor_ippis_no"`
+	BankName                         sql.NullString `db:"bank_name" json:"bank_name"`
+	AccountNumber                    sql.NullString `db:"account_number" json:"account_number"`
+	AccountHolder                    sql.NullString `db:"account_holder" json:"account_holder"`
+	Bvn                              sql.NullString `db:"bvn" json:"bvn"`
+	Occupation                       sql.NullString `db:"occupation" json:"occupation"`
+	EmployerName                     sql.NullString `db:"employer_name" json:"employer_name"`
+	EmployerAddress                  sql.NullString `db:"employer_address" json:"employer_address"`
+	EmployerPhone                    sql.NullString `db:"employer_phone" json:"employer_phone"`
+	IppisNo                          sql.NullString `db:"ippis_no" json:"ippis_no"`
+	Statement                        sql.NullString `db:"statement" json:"statement"`
+	AdminFeeReceipt                  sql.NullString `db:"admin_fee_receipt" json:"admin_fee_receipt"`
+	CollateralDocument               sql.NullString `db:"collateral_document" json:"collateral_document"`
+	LoanInterest                     sql.NullString `db:"loan_interest" json:"loan_interest"`
+	UserID                           uuid.UUID      `db:"user_id" json:"user_id"`
+	LoanTypeID                       uuid.UUID      `db:"loan_type_id" json:"loan_type_id"`
+	CreatedAt                        time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt                        time.Time      `db:"updated_at" json:"updated_at"`
+	AmountPaidTowardsNextInstallment string         `db:"amount_paid_towards_next_installment" json:"amount_paid_towards_next_installment"`
 }
 
 type LoanType struct {
@@ -121,6 +122,7 @@ type LoanType struct {
 	Rate      string    `db:"rate" json:"rate"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+	IsActive  bool      `db:"is_active" json:"is_active"`
 }
 
 type Staff struct {

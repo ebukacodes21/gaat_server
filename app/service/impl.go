@@ -4,10 +4,12 @@ import (
 	repository "app/repository/sqlc"
 	"app/types"
 	"app/utils"
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"math"
 	"os"
@@ -592,6 +594,33 @@ func (s *Service) ListLoanTypes(ctx context.Context) ([]*types.LoanType, error) 
 			ID:        v.ID.String(),
 			Name:      v.Name,
 			Rate:      r,
+			IsActive:  v.IsActive,
+			CreatedAt: v.CreatedAt,
+		}
+	}
+
+	return lt, nil
+}
+
+func (s *Service) AdminListLoanTypes(ctx context.Context) ([]*types.LoanType, error) {
+	rows, err := s.repo.AdminListLoanTypes(ctx)
+	if err != nil {
+		log.Print("unable to list loan types", err)
+		return nil, utils.NewInternalError("unable to list loan types", err)
+	}
+
+	lt := make([]*types.LoanType, len(rows))
+	for i, v := range rows {
+		r, err := decimal.NewFromString(v.Rate)
+		if err != nil {
+			return nil, utils.NewInternalError("invalid rate", err)
+		}
+
+		lt[i] = &types.LoanType{
+			ID:        v.ID.String(),
+			Name:      v.Name,
+			Rate:      r,
+			IsActive:  v.IsActive,
 			CreatedAt: v.CreatedAt,
 		}
 	}
@@ -803,18 +832,22 @@ func (s *Service) RequestLoan(ctx context.Context, userID string, input types.Re
 	amount := float64(input.PrincipalAmount)
 
 	rate := 0.0
-
-	if strings.TrimSpace(input.OverrideRate) != "" {
-		rate, err = strconv.ParseFloat(input.OverrideRate, 64)
+	log.Print(input.OverrideRate)
+	if input.OverrideRate > 0.0 {
+		rate, err = normalizeRate(input.OverrideRate)
 		if err != nil {
-			return utils.NewInvalidArgumentError("invalid override rate")
+			return utils.NewInvalidArgumentError(err.Error())
 		}
 
-		rate = rate / 100
 	} else {
 		rate, err = strconv.ParseFloat(loanType.Rate, 64)
 		if err != nil {
 			return utils.NewInternalError("invalid interest rate", err)
+		}
+
+		rate, err = normalizeRate(rate)
+		if err != nil {
+			return utils.NewInternalError(err.Error(), err)
 		}
 	}
 
@@ -824,7 +857,7 @@ func (s *Service) RequestLoan(ctx context.Context, userID string, input types.Re
 	totalInterest := calc.TotalInterest
 	totalRepayment := calc.TotalRepayment
 
-	adminFee := 0.01 * amount
+	adminFee := 0.02 * amount
 	if isPofLoan {
 		adminFee = 0.005 * amount
 	}
@@ -952,6 +985,18 @@ func (s *Service) ManageLoan(ctx context.Context, req types.ManageInput) error {
 		)
 	}
 
+	if action == "repaid" {
+		tp, err := strconv.ParseFloat(loan.TotalUnpaid, 64)
+		if err != nil {
+			return utils.NewInvalidArgumentError(
+				fmt.Sprintf("invalid total repaid: %s", loan.TotalUnpaid),
+			)
+		}
+		if tp > 0 {
+			return utils.NewPermissionDeniedError(fmt.Sprintf("total unpaid balance is: %f", tp))
+		}
+	}
+
 	err = s.repo.UpdateLoanStatus(ctx, repository.UpdateLoanStatusParams{
 		Status: action,
 		ID:     id,
@@ -961,9 +1006,11 @@ func (s *Service) ManageLoan(ctx context.Context, req types.ManageInput) error {
 	}
 
 	link := fmt.Sprintf("%s/dashboard", os.Getenv("FRONTEND_URL"))
-	if err := s.sendLoanEmail(loan, action, link); err != nil {
-		s.logger.Error("unable to send loan application mail", zap.Error(err))
-	}
+	go func() {
+		if err := s.sendLoanEmail(loan, action, link); err != nil {
+			s.logger.Error("unable to send loan application mail", zap.Error(err))
+		}
+	}()
 
 	return nil
 }
@@ -1139,6 +1186,31 @@ func (s *Service) GetDeposits(ctx context.Context, page int32, pageSize int32) (
 }
 
 func (s *Service) ManageDeposit(ctx context.Context, req types.ManageInput) error {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+
+	valid := map[string]struct{}{
+		"pending":   {},
+		"forwarded": {},
+		"approved":  {},
+		"rejected":  {},
+	}
+
+	if _, ok := valid[action]; !ok {
+		return utils.NewInvalidArgumentError(
+			"action must be one of: pending, approved, active, repaid, defaulted, rejected",
+		)
+	}
+
+	log.Print("here", "=========================")
+	err := s.repo.ManageDepositTx(ctx, repository.ManageDepositTxParams{
+		DepositID: req.ID,
+		Action:    action,
+	})
+
+	if err != nil {
+		return utils.NewInternalError(fmt.Sprintf("failed to manage deposit: %s", err.Error()), err)
+	}
+
 	return nil
 }
 
@@ -1211,9 +1283,10 @@ func (s *Service) UpdateLoanType(ctx context.Context, req types.UpdateLoanTypeRe
 	}
 
 	args := repository.UpdateLoanTypeParams{
-		ID:   id,
-		Name: sql.NullString{Valid: req.Name != "", String: req.Name},
-		Rate: sql.NullString{Valid: req.Rate != "", String: req.Rate},
+		ID:       id,
+		Name:     sql.NullString{Valid: req.Name != "", String: req.Name},
+		Rate:     sql.NullString{Valid: req.Rate != "", String: req.Rate},
+		IsActive: sql.NullBool{Valid: true, Bool: req.IsActive},
 	}
 
 	if err := s.repo.UpdateLoanType(ctx, args); err != nil {
@@ -1412,74 +1485,245 @@ func (s *Service) ManageStaff(ctx context.Context, req types.StaffAction) error 
 }
 
 func (s *Service) sendLoanEmail(loan repository.Loan, status string, actionLink string) error {
-	title := fmt.Sprintf("Loan Update: %s", strings.ToUpper(status))
+	title := fmt.Sprintf(
+		"Loan Update: %s",
+		strings.ToUpper(status),
+	)
 
 	summary := fmt.Sprintf(`
-        <div style="background-color: #211E1B; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <table style="width: 100%%; border-collapse: collapse; color: #E6E1DC;">
-                <tr><td style="padding: 5px 0; color: #8C8176;">Reference:</td><td style="text-align: right;">%s</td></tr>
-                <tr><td style="padding: 5px 0; color: #8C8176;">Loan Type:</td><td style="text-align: right;">%s</td></tr>
-                <tr><td style="padding: 5px 0; color: #8C8176;">Amount:</td><td style="text-align: right;">₦%s</td></tr>
-                <tr><td style="padding: 5px 0; color: #8C8176;">Status:</td><td style="text-align: right; color: #E6A15C;">%s</td></tr>
-            </table>
-        </div>`, loan.ID, loan.LoanType, utils.FormatWithCommas(loan.PrincipalAmount), strings.ToUpper(status))
+		<div style="background-color:#211E1B;padding:15px;border-radius:8px;margin:20px 0;">
+			<table style="width:100%%;border-collapse:collapse;color:#E6E1DC;">
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Reference:</td>
+					<td style="text-align:right;">%s</td>
+				</tr>
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Loan Type:</td>
+					<td style="text-align:right;">%s</td>
+				</tr>
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Amount:</td>
+					<td style="text-align:right;">₦%s</td>
+				</tr>
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Status:</td>
+					<td style="text-align:right;color:%s;">
+						<strong>%s</strong>
+					</td>
+				</tr>
+			</table>
+		</div>`,
+		loan.ID,
+		loan.LoanType,
+		utils.FormatWithCommas(loan.PrincipalAmount),
+		statusColor(status),
+		strings.ToUpper(status),
+	)
 
-	body := fmt.Sprintf("<p>Hello %s,</p><p>Your loan application status has been updated to <strong>%s</strong>.</p>", loan.BorrowerName, status)
-	body += summary
+	bodyContent := fmt.Sprintf(`
 
+		<p>Hello %s,</p>
+
+		<p>
+		Your loan application status has been updated to
+		<strong>%s</strong>.
+		</p>
+
+		%s
+		`,
+		loan.BorrowerName,
+		strings.ToUpper(status),
+		summary,
+	)
 	action := ""
+
 	if actionLink != "" {
-		action = fmt.Sprintf(`<a href="%s" style="background-color: #E6A15C; color: #1A1816; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">View Application</a>`, actionLink)
+		action = fmt.Sprintf(`
+
+		<a href="%s"
+		style="
+			background-color:#E6A15C;
+			color:#1A1816;
+			padding:12px 24px;
+			text-decoration:none;
+			border-radius:8px;
+			font-weight:bold;
+			display:inline-block;">
+		View Application </a>`,
+			actionLink,
+		)
 	}
 
-	content := strings.Replace(utils.EmailTemplate, "{{TITLE}}", title, 1)
-	content = strings.Replace(content, "{{BODY}}", body, 1)
-	content = strings.Replace(content, "{{ACTION}}", action, 1)
+	tmpl, err := template.New("email").Parse(utils.EmailTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse email template: %w", err)
+	}
 
-	return s.mailer.SendMail("Loan Application", content, []string{loan.Email}, nil, nil, nil)
+	data := struct {
+		Title  string
+		Body   template.HTML
+		Action template.HTML
+	}{
+		Title:  title,
+		Body:   template.HTML(bodyContent),
+		Action: template.HTML(action),
+	}
+
+	var rendered bytes.Buffer
+
+	if err := tmpl.Execute(&rendered, data); err != nil {
+		return fmt.Errorf("failed to execute email template: %w", err)
+	}
+
+	return s.mailer.SendMail(
+		title,
+		rendered.String(),
+		[]string{loan.Email},
+		nil,
+		nil,
+		nil,
+	)
+
+}
+
+func (s *Service) sendDepositEmail(deposit repository.Deposit, status string, actionLink string) error {
+	title := fmt.Sprintf(
+		"Deposit Update: %s",
+		strings.ToUpper(status),
+	)
+
+	summary := fmt.Sprintf(`
+		<div style="background-color:#211E1B;padding:15px;border-radius:8px;margin:20px 0;">
+			<table style="width:100%%;border-collapse:collapse;color:#E6E1DC;">
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Reference:</td>
+					<td style="text-align:right;">%s</td>
+				</tr>
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Amount:</td>
+					<td style="text-align:right;">₦%s</td>
+				</tr>
+				<tr>
+					<td style="padding:5px 0;color:#8C8176;">Status:</td>
+					<td style="text-align:right;color:%s;">
+						<strong>%s</strong>
+					</td>
+				</tr>
+			</table>
+		</div>`,
+		deposit.ID,
+		utils.FormatWithCommas(deposit.Amount),
+		statusColor(status),
+		strings.ToUpper(status),
+	)
+
+	bodyContent := fmt.Sprintf(`
+		<p>Hello,</p>
+
+		<p>
+		Your deposit has been updated to
+		<strong>%s</strong>.
+		</p>
+
+		%s
+		`,
+		strings.ToUpper(status),
+		summary,
+	)
+
+	action := ""
+
+	if actionLink != "" {
+		action = fmt.Sprintf(`
+
+		<a href="%s"
+		style="
+			background-color:#E6A15C;
+			color:#1A1816;
+			padding:12px 24px;
+			text-decoration:none;
+			border-radius:8px;
+			font-weight:bold;
+			display:inline-block;">
+		View Deposit </a>`,
+			actionLink,
+		)
+	}
+
+	tmpl, err := template.New("email").Parse(utils.EmailTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse email template: %w", err)
+	}
+
+	data := struct {
+		Title  string
+		Body   template.HTML
+		Action template.HTML
+	}{
+		Title:  title,
+		Body:   template.HTML(bodyContent),
+		Action: template.HTML(action),
+	}
+
+	var rendered bytes.Buffer
+
+	if err := tmpl.Execute(&rendered, data); err != nil {
+		return fmt.Errorf("failed to execute email template: %w", err)
+	}
+
+	return s.mailer.SendMail(
+		title,
+		rendered.String(),
+		[]string{deposit.Email},
+		nil,
+		nil,
+		nil,
+	)
+
 }
 
 func mapLoan(loan repository.Loan) *types.Loan {
 	return &types.Loan{
-		ID:                 loan.ID.String(),
-		LoanType:           loan.LoanType,
-		PrincipalAmount:    loan.PrincipalAmount,
-		InterestRate:       loan.InterestRate,
-		TermMonths:         nullInt32(loan.TermMonths),
-		MonthlyPayment:     nullString(loan.MonthlyPayment),
-		AdminFee:           loan.AdminFee,
-		TotalInterest:      nullString(loan.TotalInterest),
-		TotalRepayment:     nullString(loan.TotalRepayment),
-		TotalRepaid:        loan.TotalRepaid,
-		TotalUnpaid:        loan.TotalUnpaid,
-		NumberOfRepayments: loan.NumberOfRepayments,
-		Status:             loan.Status,
-		DueDate:            nullTime(loan.DueDate),
-		ApprovedDate:       nullTime(loan.ApprovedDate),
-		NextPaymentDate:    nullTime(loan.NextPaymentDate),
-		Collateral:         loan.Collateral,
-		BorrowerName:       loan.BorrowerName,
-		Email:              loan.Email,
-		GuarantorName:      nullString(loan.GuarantorName),
-		GuarantorEmail:     nullString(loan.GuarantorEmail),
-		GuarantorPhone:     nullString(loan.GuarantorPhone),
-		GuarantorIppisNo:   nullString(loan.GuarantorIppisNo),
-		BankName:           nullString(loan.BankName),
-		AccountNumber:      nullString(loan.AccountNumber),
-		AccountHolder:      nullString(loan.AccountHolder),
-		BVN:                nullString(loan.Bvn),
-		Occupation:         nullString(loan.Occupation),
-		EmployerName:       nullString(loan.EmployerName),
-		EmployerAddress:    nullString(loan.EmployerAddress),
-		EmployerPhone:      nullString(loan.EmployerPhone),
-		IppisNo:            nullString(loan.IppisNo),
-		Statement:          nullString(loan.Statement),
-		AdminFeeReceipt:    nullString(loan.AdminFeeReceipt),
-		CollateralDocument: nullString(loan.CollateralDocument),
-		LoanInterest:       nullString(loan.LoanInterest),
-		UserID:             loan.UserID.String(),
-		CreatedAt:          loan.CreatedAt,
-		UpdatedAt:          loan.UpdatedAt,
+		ID:                               loan.ID.String(),
+		LoanType:                         loan.LoanType,
+		PrincipalAmount:                  loan.PrincipalAmount,
+		InterestRate:                     loan.InterestRate,
+		TermMonths:                       nullInt32(loan.TermMonths),
+		MonthlyPayment:                   nullString(loan.MonthlyPayment),
+		AdminFee:                         loan.AdminFee,
+		TotalInterest:                    nullString(loan.TotalInterest),
+		TotalRepayment:                   nullString(loan.TotalRepayment),
+		TotalRepaid:                      loan.TotalRepaid,
+		TotalUnpaid:                      loan.TotalUnpaid,
+		NumberOfRepayments:               loan.NumberOfRepayments,
+		Status:                           loan.Status,
+		DueDate:                          nullTime(loan.DueDate),
+		ApprovedDate:                     nullTime(loan.ApprovedDate),
+		NextPaymentDate:                  nullTime(loan.NextPaymentDate),
+		Collateral:                       loan.Collateral,
+		BorrowerName:                     loan.BorrowerName,
+		Email:                            loan.Email,
+		GuarantorName:                    nullString(loan.GuarantorName),
+		GuarantorEmail:                   nullString(loan.GuarantorEmail),
+		GuarantorPhone:                   nullString(loan.GuarantorPhone),
+		GuarantorIppisNo:                 nullString(loan.GuarantorIppisNo),
+		BankName:                         nullString(loan.BankName),
+		AccountNumber:                    nullString(loan.AccountNumber),
+		AccountHolder:                    nullString(loan.AccountHolder),
+		BVN:                              nullString(loan.Bvn),
+		Occupation:                       nullString(loan.Occupation),
+		EmployerName:                     nullString(loan.EmployerName),
+		EmployerAddress:                  nullString(loan.EmployerAddress),
+		EmployerPhone:                    nullString(loan.EmployerPhone),
+		IppisNo:                          nullString(loan.IppisNo),
+		Statement:                        nullString(loan.Statement),
+		AdminFeeReceipt:                  nullString(loan.AdminFeeReceipt),
+		CollateralDocument:               nullString(loan.CollateralDocument),
+		LoanInterest:                     nullString(loan.LoanInterest),
+		UserID:                           loan.UserID.String(),
+		AmountPaidTowardsNextInstallment: loan.AmountPaidTowardsNextInstallment,
+		CreatedAt:                        loan.CreatedAt,
+		UpdatedAt:                        loan.UpdatedAt,
 	}
 }
 
@@ -1519,4 +1763,29 @@ func nullTime(v sql.NullTime) *time.Time {
 		return &v.Time
 	}
 	return nil
+}
+
+func normalizeRate(r float64) (float64, error) {
+	if r <= 0 {
+		return 0, errors.New("invalid rate")
+	}
+
+	if r > 1 {
+		return 0, errors.New("rate must be decimal (e.g. 0.08 not 8)")
+	}
+
+	return r, nil
+}
+
+func statusColor(status string) string {
+	switch strings.ToLower(status) {
+	case "approved":
+		return "#22C55E"
+	case "rejected":
+		return "#EF4444"
+	case "forwarded":
+		return "#E6A15C"
+	default:
+		return "#E6A15C"
+	}
 }

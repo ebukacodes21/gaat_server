@@ -8,6 +8,7 @@ import (
 type DatabaseContract interface {
 	Querier
 	CreateUserAccountTx(ctx context.Context, args CreateAccountTxParams) (User, error)
+	ManageDepositTx(ctx context.Context, args ManageDepositTxParams) error
 }
 
 type Repository struct {

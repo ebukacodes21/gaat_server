@@ -13,6 +13,42 @@ import (
 	"github.com/google/uuid"
 )
 
+const adminListLoanTypes = `-- name: AdminListLoanTypes :many
+SELECT id, name, rate, created_at, updated_at, is_active 
+FROM loan_types
+ORDER BY id DESC
+`
+
+func (q *Queries) AdminListLoanTypes(ctx context.Context) ([]LoanType, error) {
+	rows, err := q.db.QueryContext(ctx, adminListLoanTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LoanType{}
+	for rows.Next() {
+		var i LoanType
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Rate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsActive,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const approveLoan = `-- name: ApproveLoan :exec
 UPDATE loans
 SET
@@ -219,7 +255,7 @@ VALUES (
     $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
     $31,$32,$33,$34,$35,$36,$37
 )
-RETURNING id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at
+RETURNING id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at, amount_paid_towards_next_installment
 `
 
 type CreateLoanParams struct {
@@ -344,6 +380,7 @@ func (q *Queries) CreateLoan(ctx context.Context, arg CreateLoanParams) (Loan, e
 		&i.LoanTypeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AmountPaidTowardsNextInstallment,
 	)
 	return i, err
 }
@@ -359,9 +396,17 @@ type CreateLoanTypeParams struct {
 	Rate string `db:"rate" json:"rate"`
 }
 
-func (q *Queries) CreateLoanType(ctx context.Context, arg CreateLoanTypeParams) (LoanType, error) {
+type CreateLoanTypeRow struct {
+	ID        uuid.UUID `db:"id" json:"id"`
+	Name      string    `db:"name" json:"name"`
+	Rate      string    `db:"rate" json:"rate"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) CreateLoanType(ctx context.Context, arg CreateLoanTypeParams) (CreateLoanTypeRow, error) {
 	row := q.db.QueryRowContext(ctx, createLoanType, arg.Name, arg.Rate)
-	var i LoanType
+	var i CreateLoanTypeRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -536,6 +581,15 @@ WHERE id = $1
 
 func (q *Queries) DeleteLoanType(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, deleteLoanType, id)
+	return err
+}
+
+const deleteLoans = `-- name: DeleteLoans :exec
+DELETE FROM loans
+`
+
+func (q *Queries) DeleteLoans(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteLoans)
 	return err
 }
 
@@ -730,7 +784,7 @@ func (q *Queries) GetDepositsByUserID(ctx context.Context, arg GetDepositsByUser
 }
 
 const getLoanByID = `-- name: GetLoanByID :one
-SELECT id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at
+SELECT id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at, amount_paid_towards_next_installment
 FROM loans
 WHERE id = $1
 LIMIT 1
@@ -780,6 +834,7 @@ func (q *Queries) GetLoanByID(ctx context.Context, id uuid.UUID) (Loan, error) {
 		&i.LoanTypeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AmountPaidTowardsNextInstallment,
 	)
 	return i, err
 }
@@ -790,9 +845,17 @@ FROM loan_types
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetLoanTypeByID(ctx context.Context, id uuid.UUID) (LoanType, error) {
+type GetLoanTypeByIDRow struct {
+	ID        uuid.UUID `db:"id" json:"id"`
+	Name      string    `db:"name" json:"name"`
+	Rate      string    `db:"rate" json:"rate"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetLoanTypeByID(ctx context.Context, id uuid.UUID) (GetLoanTypeByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getLoanTypeByID, id)
-	var i LoanType
+	var i GetLoanTypeByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -804,7 +867,7 @@ func (q *Queries) GetLoanTypeByID(ctx context.Context, id uuid.UUID) (LoanType, 
 }
 
 const getLoanTypeByName = `-- name: GetLoanTypeByName :one
-SELECT id, name, rate, created_at, updated_at FROM loan_types
+SELECT id, name, rate, created_at, updated_at, is_active FROM loan_types
 WHERE id = $1
 LIMIT 1
 `
@@ -818,12 +881,13 @@ func (q *Queries) GetLoanTypeByName(ctx context.Context, id uuid.UUID) (LoanType
 		&i.Rate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsActive,
 	)
 	return i, err
 }
 
 const getLoans = `-- name: GetLoans :many
-SELECT id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at
+SELECT id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at, amount_paid_towards_next_installment
 FROM loans
 ORDER BY created_at DESC
 LIMIT $1
@@ -885,6 +949,7 @@ func (q *Queries) GetLoans(ctx context.Context, arg GetLoansParams) ([]Loan, err
 			&i.LoanTypeID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AmountPaidTowardsNextInstallment,
 		); err != nil {
 			return nil, err
 		}
@@ -900,7 +965,7 @@ func (q *Queries) GetLoans(ctx context.Context, arg GetLoansParams) ([]Loan, err
 }
 
 const getLoansByUserID = `-- name: GetLoansByUserID :many
-SELECT id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at
+SELECT id, loan_type, principal_amount, interest_rate, term_months, monthly_payment, admin_fee, total_interest, total_repayment, total_repaid, total_unpaid, number_of_repayments, status, due_date, approved_date, next_payment_date, collateral, borrower_name, email, guarantor_name, guarantor_email, guarantor_phone, guarantor_ippis_no, bank_name, account_number, account_holder, bvn, occupation, employer_name, employer_address, employer_phone, ippis_no, statement, admin_fee_receipt, collateral_document, loan_interest, user_id, loan_type_id, created_at, updated_at, amount_paid_towards_next_installment
 FROM loans
 WHERE user_id = $1
 ORDER BY created_at DESC
@@ -964,6 +1029,7 @@ func (q *Queries) GetLoansByUserID(ctx context.Context, arg GetLoansByUserIDPara
 			&i.LoanTypeID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AmountPaidTowardsNextInstallment,
 		); err != nil {
 			return nil, err
 		}
@@ -1328,25 +1394,36 @@ func (q *Queries) GetUsers(ctx context.Context, arg GetUsersParams) ([]GetUsersR
 }
 
 const listLoanTypes = `-- name: ListLoanTypes :many
-SELECT id, name, rate, created_at, updated_at 
+SELECT id, name, rate, created_at, is_active, updated_at 
 FROM loan_types
+WHERE is_active = TRUE
 ORDER BY id DESC
 `
 
-func (q *Queries) ListLoanTypes(ctx context.Context) ([]LoanType, error) {
+type ListLoanTypesRow struct {
+	ID        uuid.UUID `db:"id" json:"id"`
+	Name      string    `db:"name" json:"name"`
+	Rate      string    `db:"rate" json:"rate"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	IsActive  bool      `db:"is_active" json:"is_active"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) ListLoanTypes(ctx context.Context) ([]ListLoanTypesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listLoanTypes)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LoanType{}
+	items := []ListLoanTypesRow{}
 	for rows.Next() {
-		var i LoanType
+		var i ListLoanTypesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Rate,
 			&i.CreatedAt,
+			&i.IsActive,
 			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -1360,6 +1437,24 @@ func (q *Queries) ListLoanTypes(ctx context.Context) ([]LoanType, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateDepositStatus = `-- name: UpdateDepositStatus :exec
+UPDATE deposits
+SET
+    status = $2,
+    updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateDepositStatusParams struct {
+	ID     uuid.UUID `db:"id" json:"id"`
+	Status string    `db:"status" json:"status"`
+}
+
+func (q *Queries) UpdateDepositStatus(ctx context.Context, arg UpdateDepositStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateDepositStatus, arg.ID, arg.Status)
+	return err
 }
 
 const updateLastLogin = `-- name: UpdateLastLogin :exec
@@ -1390,16 +1485,21 @@ SET
     total_repaid = $2,
     total_unpaid = $3,
     number_of_repayments = $4,
-    next_payment_date = $5
+    amount_paid_towards_next_installment = $5,
+    next_payment_date = $6,
+    status = $7,
+    updated_at = NOW()
 WHERE id = $1
 `
 
 type UpdateLoanRepaymentParams struct {
-	ID                 uuid.UUID    `db:"id" json:"id"`
-	TotalRepaid        string       `db:"total_repaid" json:"total_repaid"`
-	TotalUnpaid        string       `db:"total_unpaid" json:"total_unpaid"`
-	NumberOfRepayments int32        `db:"number_of_repayments" json:"number_of_repayments"`
-	NextPaymentDate    sql.NullTime `db:"next_payment_date" json:"next_payment_date"`
+	ID                               uuid.UUID    `db:"id" json:"id"`
+	TotalRepaid                      string       `db:"total_repaid" json:"total_repaid"`
+	TotalUnpaid                      string       `db:"total_unpaid" json:"total_unpaid"`
+	NumberOfRepayments               int32        `db:"number_of_repayments" json:"number_of_repayments"`
+	AmountPaidTowardsNextInstallment string       `db:"amount_paid_towards_next_installment" json:"amount_paid_towards_next_installment"`
+	NextPaymentDate                  sql.NullTime `db:"next_payment_date" json:"next_payment_date"`
+	Status                           string       `db:"status" json:"status"`
 }
 
 func (q *Queries) UpdateLoanRepayment(ctx context.Context, arg UpdateLoanRepaymentParams) error {
@@ -1408,7 +1508,9 @@ func (q *Queries) UpdateLoanRepayment(ctx context.Context, arg UpdateLoanRepayme
 		arg.TotalRepaid,
 		arg.TotalUnpaid,
 		arg.NumberOfRepayments,
+		arg.AmountPaidTowardsNextInstallment,
 		arg.NextPaymentDate,
+		arg.Status,
 	)
 	return err
 }
@@ -1434,18 +1536,25 @@ func (q *Queries) UpdateLoanStatus(ctx context.Context, arg UpdateLoanStatusPara
 const updateLoanType = `-- name: UpdateLoanType :exec
 UPDATE loan_types
 SET name = COALESCE($2, name),
-    rate = COALESCE($3, rate)
+    rate = COALESCE($3, rate),
+    is_active = COALESCE($4, is_active)
 WHERE id = $1
 `
 
 type UpdateLoanTypeParams struct {
-	ID   uuid.UUID      `db:"id" json:"id"`
-	Name sql.NullString `db:"name" json:"name"`
-	Rate sql.NullString `db:"rate" json:"rate"`
+	ID       uuid.UUID      `db:"id" json:"id"`
+	Name     sql.NullString `db:"name" json:"name"`
+	Rate     sql.NullString `db:"rate" json:"rate"`
+	IsActive sql.NullBool   `db:"is_active" json:"is_active"`
 }
 
 func (q *Queries) UpdateLoanType(ctx context.Context, arg UpdateLoanTypeParams) error {
-	_, err := q.db.ExecContext(ctx, updateLoanType, arg.ID, arg.Name, arg.Rate)
+	_, err := q.db.ExecContext(ctx, updateLoanType,
+		arg.ID,
+		arg.Name,
+		arg.Rate,
+		arg.IsActive,
+	)
 	return err
 }
 

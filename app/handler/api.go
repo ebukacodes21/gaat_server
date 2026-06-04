@@ -77,14 +77,15 @@ func NewGaatServer(svc service.GaatService, maker utils.TokenMaker) GaatServer {
 	authRoutes.GET("/api/deposit", utils.RequireRole("user"), gs.Deposit)
 
 	// SUPERVISOR+
-	authRoutes.PATCH("/api/loans/manage", utils.RequireRole("supervisor"), gs.ManageLoan)
-	authRoutes.PATCH("/api/deposits/manage", utils.RequireRole("supervisor"), gs.ManageDeposit)
-	authRoutes.GET("/api/users", utils.RequireRole("supervisor"), gs.ListUsers)
-	authRoutes.PATCH("/api/users/manage", utils.RequireRole("supervisor"), gs.ManageUser)
+	authRoutes.PATCH("/api/loans/manage", utils.RequireRole("staff"), gs.ManageLoan)
+	authRoutes.PATCH("/api/deposits/manage", utils.RequireRole("staff"), gs.ManageDeposit)
+	authRoutes.GET("/api/users", utils.RequireRole("staff"), gs.ListUsers)
+	authRoutes.PATCH("/api/users/manage", utils.RequireRole("staff"), gs.ManageUser)
 
 	// ADMIN ONLY
 	authRoutes.POST("/api/loan-types/create", utils.RequireRole("admin"), gs.CreateLoanType)
 	authRoutes.PATCH("/api/loan-types/update", utils.RequireRole("admin"), gs.UpdateLoanType)
+	authRoutes.GET("/api/loan-types/admin", utils.RequireRole("admin"), gs.AdminListLoanTypes)
 
 	authRoutes.POST("/api/staffs/create", utils.RequireRole("admin"), gs.CreateStaff)
 	authRoutes.PATCH("/api/staffs/update", utils.RequireRole("admin"), gs.UpdateStaff)
@@ -371,13 +372,7 @@ func (gs *GaatServer) ListDeposits(c *gin.Context) {
 }
 
 func (gs *GaatServer) ManageLoan(c *gin.Context) {
-	_ = c.MustGet(utils.AuthorizationPayloadKey).(*utils.Payload)
-	// err := guard(payload.Role, body.Action)
-	// if err != nil {
-	// 	c.JSON(http.StatusForbidden, gin.H{
-	// 		"error": err.Error(),
-	// 	})
-	// }
+	payload := c.MustGet(utils.AuthorizationPayloadKey).(*utils.Payload)
 	var body types.ManageInput
 
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -387,7 +382,15 @@ func (gs *GaatServer) ManageLoan(c *gin.Context) {
 		return
 	}
 
-	err := gs.service.ManageLoan(c.Request.Context(), body)
+	err := guard(payload.Role, body.Action)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	err = gs.service.ManageLoan(c.Request.Context(), body)
 	if err != nil {
 		code, msg := utils.TranslateDomainError(err)
 		c.JSON(code, gin.H{"error": msg})
@@ -541,7 +544,7 @@ func (gs *GaatServer) UpdateLoanType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "loan type created!",
+		"message": "loan type updated!",
 	})
 }
 
@@ -588,13 +591,7 @@ func (gs *GaatServer) CreateDeposit(c *gin.Context) {
 }
 
 func (gs *GaatServer) ManageDeposit(c *gin.Context) {
-	_ = c.MustGet(utils.AuthorizationPayloadKey).(*utils.Payload)
-	// err := guard(payload.Role, body.Action)
-	// if err != nil {
-	// 	c.JSON(http.StatusForbidden, gin.H{
-	// 		"error": err.Error(),
-	// 	})
-	// }
+	payload := c.MustGet(utils.AuthorizationPayloadKey).(*utils.Payload)
 	var body types.ManageInput
 
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -604,7 +601,15 @@ func (gs *GaatServer) ManageDeposit(c *gin.Context) {
 		return
 	}
 
-	err := gs.service.ManageDeposit(c.Request.Context(), body)
+	err := guard(payload.Role, body.Action)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	err = gs.service.ManageDeposit(c.Request.Context(), body)
 	if err != nil {
 		code, msg := utils.TranslateDomainError(err)
 		c.JSON(code, gin.H{"error": msg})
@@ -687,6 +692,19 @@ func (gs *GaatServer) ManageUser(c *gin.Context) {
 
 func (gs *GaatServer) ListLoanTypes(c *gin.Context) {
 	loanTypes, err := gs.service.ListLoanTypes(c)
+	if err != nil {
+		code, errMsg := utils.TranslateDomainError(err)
+		c.JSON(code, gin.H{"error": errMsg})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": loanTypes,
+	})
+}
+
+func (gs *GaatServer) AdminListLoanTypes(c *gin.Context) {
+	loanTypes, err := gs.service.AdminListLoanTypes(c)
 	if err != nil {
 		code, errMsg := utils.TranslateDomainError(err)
 		c.JSON(code, gin.H{"error": errMsg})
@@ -835,23 +853,35 @@ func guard(r, a string) error {
 		"admin":      true,
 	}
 
+	validActions := map[string]bool{
+		"forwarded": true,
+		"rejected":  true,
+		"approved":  true,
+		"repaid":    true,
+		"defaulted": true,
+	}
+
 	if !validRoles[role] {
 		return fmt.Errorf("invalid role")
 	}
 
+	if !validActions[action] {
+		return fmt.Errorf("invalid action")
+	}
+
 	switch role {
 	case "admin":
-		// admin can do everything
-		break
+		return nil
 
 	case "staff", "supervisor":
-		if action != "forwarded" {
-			return fmt.Errorf("forbidden to access route")
+		if action == "approved" {
+			return fmt.Errorf("forbidden to approve instrument")
 		}
+		return nil
 
 	case "user":
 		return fmt.Errorf("forbidden to access route")
 	}
 
-	return nil
+	return fmt.Errorf("forbidden to access route")
 }

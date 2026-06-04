@@ -78,8 +78,33 @@ SET
     updated_at = NOW()
 WHERE id = $1;
 
+-- name: UpdateLoanRepayment :exec
+UPDATE loans
+SET
+    total_repaid = $2,
+    total_unpaid = $3,
+    number_of_repayments = $4,
+    amount_paid_towards_next_installment = $5,
+    next_payment_date = $6,
+    status = $7,
+    updated_at = NOW()
+WHERE id = $1;
+
+-- name: UpdateDepositStatus :exec
+UPDATE deposits
+SET
+    status = $2,
+    updated_at = NOW()
+WHERE id = $1;
+
 -- name: ListLoanTypes :many
-SELECT id, name, rate, created_at, updated_at 
+SELECT id, name, rate, created_at, is_active, updated_at 
+FROM loan_types
+WHERE is_active = TRUE
+ORDER BY id DESC;
+
+-- name: AdminListLoanTypes :many
+SELECT * 
 FROM loan_types
 ORDER BY id DESC;
 
@@ -96,7 +121,8 @@ RETURNING id, name, rate, created_at, updated_at;
 -- name: UpdateLoanType :exec
 UPDATE loan_types
 SET name = COALESCE(sqlc.narg(name), name),
-    rate = COALESCE(sqlc.narg(rate), rate)
+    rate = COALESCE(sqlc.narg(rate), rate),
+    is_active = COALESCE(sqlc.narg(is_active), is_active)
 WHERE id = $1;
 
 -- name: DeleteLoanType :exec
@@ -312,15 +338,6 @@ SET
     approved_date = NOW()
 WHERE id = $1;
 
--- name: UpdateLoanRepayment :exec
-UPDATE loans
-SET
-    total_repaid = $2,
-    total_unpaid = $3,
-    number_of_repayments = $4,
-    next_payment_date = $5
-WHERE id = $1;
-
 -- name: CountLoans :one
 SELECT COUNT(*) AS total
 FROM loans;
@@ -426,3 +443,6 @@ WHERE email = $1 LIMIT 1;
 UPDATE staffs
 SET last_login = NOW()
 WHERE id = $1;
+
+-- name: DeleteLoans :exec
+DELETE FROM loans;

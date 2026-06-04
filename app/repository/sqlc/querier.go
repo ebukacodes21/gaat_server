@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AdminListLoanTypes(ctx context.Context) ([]LoanType, error)
 	ApproveLoan(ctx context.Context, id uuid.UUID) error
 	CountDeposits(ctx context.Context) (int64, error)
 	CountDepositsByUserID(ctx context.Context, userID uuid.UUID) (int64, error)
@@ -21,18 +22,19 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	CreateDeposit(ctx context.Context, arg CreateDepositParams) (Deposit, error)
 	CreateLoan(ctx context.Context, arg CreateLoanParams) (Loan, error)
-	CreateLoanType(ctx context.Context, arg CreateLoanTypeParams) (LoanType, error)
+	CreateLoanType(ctx context.Context, arg CreateLoanTypeParams) (CreateLoanTypeRow, error)
 	CreateStaff(ctx context.Context, arg CreateStaffParams) (CreateStaffRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DashboardStats(ctx context.Context) (DashboardStatsRow, error)
 	DeleteLoanType(ctx context.Context, id uuid.UUID) error
+	DeleteLoans(ctx context.Context) error
 	DeleteStaff(ctx context.Context, id uuid.UUID) error
 	GetAllStaff(ctx context.Context, arg GetAllStaffParams) ([]GetAllStaffRow, error)
 	GetDepositByID(ctx context.Context, id uuid.UUID) (Deposit, error)
 	GetDeposits(ctx context.Context, arg GetDepositsParams) ([]Deposit, error)
 	GetDepositsByUserID(ctx context.Context, arg GetDepositsByUserIDParams) ([]Deposit, error)
 	GetLoanByID(ctx context.Context, id uuid.UUID) (Loan, error)
-	GetLoanTypeByID(ctx context.Context, id uuid.UUID) (LoanType, error)
+	GetLoanTypeByID(ctx context.Context, id uuid.UUID) (GetLoanTypeByIDRow, error)
 	GetLoanTypeByName(ctx context.Context, id uuid.UUID) (LoanType, error)
 	GetLoans(ctx context.Context, arg GetLoansParams) ([]Loan, error)
 	GetLoansByUserID(ctx context.Context, arg GetLoansByUserIDParams) ([]Loan, error)
@@ -43,7 +45,8 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
 	GetUserForLogin(ctx context.Context, email string) (GetUserForLoginRow, error)
 	GetUsers(ctx context.Context, arg GetUsersParams) ([]GetUsersRow, error)
-	ListLoanTypes(ctx context.Context) ([]LoanType, error)
+	ListLoanTypes(ctx context.Context) ([]ListLoanTypesRow, error)
+	UpdateDepositStatus(ctx context.Context, arg UpdateDepositStatusParams) error
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 	UpdateLastLoginStaff(ctx context.Context, id uuid.UUID) error
 	UpdateLoanRepayment(ctx context.Context, arg UpdateLoanRepaymentParams) error

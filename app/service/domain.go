@@ -21,6 +21,7 @@ type GaatService interface {
 
 	//loans
 	ListLoanTypes(ctx context.Context) ([]*types.LoanType, error)
+	AdminListLoanTypes(ctx context.Context) ([]*types.LoanType, error)
 	RequestLoan(ctx context.Context, userID string, input types.RequestLoanInput) error
 	GetUserLoans(ctx context.Context, userID string, page int32, pageSize int32) (*types.LoanListResult, error)
 	GetUserDeposits(ctx context.Context, userID string, page int32, pageSize int32) (*types.DepositListResult, error)

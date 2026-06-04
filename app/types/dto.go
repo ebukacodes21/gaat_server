@@ -133,6 +133,7 @@ type LoanType struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Rate      decimal.Decimal `json:"rate"`
+	IsActive  bool            `json:"is_active"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 }
@@ -143,9 +144,10 @@ type LoanTypeRequest struct {
 }
 
 type UpdateLoanTypeRequest struct {
-	ID   string `json:"id" binding:"required,uuid"`
-	Name string `json:"name" binding:"required"`
-	Rate string `json:"rate" binding:"required"`
+	ID       string `json:"id" binding:"required,uuid"`
+	Name     string `json:"name" binding:"required"`
+	Rate     string `json:"rate" binding:"required"`
+	IsActive bool   `json:"is_active"`
 }
 
 type UpdateStaffRequest struct {
@@ -168,16 +170,16 @@ type RequestLoanInput struct {
 	AdminFeeReceipt    string `json:"admin_fee_receipt" binding:"required,url"`
 	PrincipalAmount    int64  `json:"principal_amount" binding:"required"`
 	// conditionally required in service
-	GuarantorName    string `json:"guarantor_name"`
-	GuarantorEmail   string `json:"guarantor_email"`
-	GuarantorPhone   string `json:"guarantor_phone"`
-	GuarantorIppisNo string `json:"guarantor_ippis_no"`
-	EmployerName     string `json:"employer_name"`
-	EmployerAddress  string `json:"employer_address"`
-	EmployerPhone    string `json:"employer_phone"`
-	IppisNo          string `json:"ippis_no"`
-	LoanInterest     string `json:"loan_interest"`
-	OverrideRate     string `json:"override_rate"`
+	GuarantorName    string  `json:"guarantor_name"`
+	GuarantorEmail   string  `json:"guarantor_email"`
+	GuarantorPhone   string  `json:"guarantor_phone"`
+	GuarantorIppisNo string  `json:"guarantor_ippis_no"`
+	EmployerName     string  `json:"employer_name"`
+	EmployerAddress  string  `json:"employer_address"`
+	EmployerPhone    string  `json:"employer_phone"`
+	IppisNo          string  `json:"ippis_no"`
+	LoanInterest     string  `json:"loan_interest"`
+	OverrideRate     float64 `json:"override_rate"`
 }
 
 type CreateDepositInput struct {
@@ -205,45 +207,46 @@ type UpdateLoanTypeInput struct {
 }
 
 type Loan struct {
-	ID                 string     `json:"id"`
-	LoanType           string     `json:"loan_type"`
-	PrincipalAmount    string     `json:"principal_amount"`
-	InterestRate       string     `json:"interest_rate"`
-	TermMonths         int32      `json:"term_months"`
-	MonthlyPayment     string     `json:"monthly_payment"`
-	AdminFee           string     `json:"admin_fee"`
-	TotalInterest      string     `json:"total_interest"`
-	TotalRepayment     string     `json:"total_repayment"`
-	TotalRepaid        string     `json:"total_repaid"`
-	TotalUnpaid        string     `json:"total_unpaid"`
-	NumberOfRepayments int32      `json:"number_of_repayments"`
-	Status             string     `json:"status"`
-	DueDate            *time.Time `json:"due_date,omitempty"`
-	ApprovedDate       *time.Time `json:"approved_date,omitempty"`
-	NextPaymentDate    *time.Time `json:"next_payment_date,omitempty"`
-	Collateral         string     `json:"collateral"`
-	BorrowerName       string     `json:"borrower_name"`
-	Email              string     `json:"email"`
-	GuarantorName      string     `json:"guarantor_name,omitempty"`
-	GuarantorEmail     string     `json:"guarantor_email,omitempty"`
-	GuarantorPhone     string     `json:"guarantor_phone,omitempty"`
-	GuarantorIppisNo   string     `json:"guarantor_ippis_no,omitempty"`
-	BankName           string     `json:"bank_name,omitempty"`
-	AccountNumber      string     `json:"account_number,omitempty"`
-	AccountHolder      string     `json:"account_holder,omitempty"`
-	BVN                string     `json:"bvn,omitempty"`
-	Occupation         string     `json:"occupation,omitempty"`
-	EmployerName       string     `json:"employer_name,omitempty"`
-	EmployerAddress    string     `json:"employer_address,omitempty"`
-	EmployerPhone      string     `json:"employer_phone,omitempty"`
-	IppisNo            string     `json:"ippis_no,omitempty"`
-	Statement          string     `json:"statement,omitempty"`
-	AdminFeeReceipt    string     `json:"admin_fee_receipt,omitempty"`
-	CollateralDocument string     `json:"collateral_document,omitempty"`
-	LoanInterest       string     `json:"loan_interest,omitempty"`
-	UserID             string     `json:"user_id"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                               string     `json:"id"`
+	LoanType                         string     `json:"loan_type"`
+	PrincipalAmount                  string     `json:"principal_amount"`
+	InterestRate                     string     `json:"interest_rate"`
+	TermMonths                       int32      `json:"term_months"`
+	MonthlyPayment                   string     `json:"monthly_payment"`
+	AdminFee                         string     `json:"admin_fee"`
+	TotalInterest                    string     `json:"total_interest"`
+	TotalRepayment                   string     `json:"total_repayment"`
+	TotalRepaid                      string     `json:"total_repaid"`
+	TotalUnpaid                      string     `json:"total_unpaid"`
+	NumberOfRepayments               int32      `json:"number_of_repayments"`
+	AmountPaidTowardsNextInstallment string     `json:"amount_paid_towards_next_installment"`
+	Status                           string     `json:"status"`
+	DueDate                          *time.Time `json:"due_date,omitempty"`
+	ApprovedDate                     *time.Time `json:"approved_date,omitempty"`
+	NextPaymentDate                  *time.Time `json:"next_payment_date,omitempty"`
+	Collateral                       string     `json:"collateral"`
+	BorrowerName                     string     `json:"borrower_name"`
+	Email                            string     `json:"email"`
+	GuarantorName                    string     `json:"guarantor_name,omitempty"`
+	GuarantorEmail                   string     `json:"guarantor_email,omitempty"`
+	GuarantorPhone                   string     `json:"guarantor_phone,omitempty"`
+	GuarantorIppisNo                 string     `json:"guarantor_ippis_no,omitempty"`
+	BankName                         string     `json:"bank_name,omitempty"`
+	AccountNumber                    string     `json:"account_number,omitempty"`
+	AccountHolder                    string     `json:"account_holder,omitempty"`
+	BVN                              string     `json:"bvn,omitempty"`
+	Occupation                       string     `json:"occupation,omitempty"`
+	EmployerName                     string     `json:"employer_name,omitempty"`
+	EmployerAddress                  string     `json:"employer_address,omitempty"`
+	EmployerPhone                    string     `json:"employer_phone,omitempty"`
+	IppisNo                          string     `json:"ippis_no,omitempty"`
+	Statement                        string     `json:"statement,omitempty"`
+	AdminFeeReceipt                  string     `json:"admin_fee_receipt,omitempty"`
+	CollateralDocument               string     `json:"collateral_document,omitempty"`
+	LoanInterest                     string     `json:"loan_interest,omitempty"`
+	UserID                           string     `json:"user_id"`
+	CreatedAt                        time.Time  `json:"created_at"`
+	UpdatedAt                        time.Time  `json:"updated_at"`
 }
 
 type Deposit struct {

@@ -1,0 +1,2 @@
+ALTER TABLE loan_types
+DROP COLUMN IF EXISTS is_active;
