@@ -27,7 +27,6 @@ import (
 type GaatServer struct {
 	R        *gin.Engine
 	service  service.GaatService
-	maker    utils.TokenMaker
 	s3Bucket *s3.Client
 }
 

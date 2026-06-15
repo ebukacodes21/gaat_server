@@ -64,10 +64,8 @@ func init() {
 		panic(err)
 	}
 
-	mailer := utils.NewGAATMailer(os.Getenv("EMAIL_NAME"), os.Getenv("EMAIL_ADDRESS"), os.Getenv("EMAIL_PASSWORD"))
-
 	db := repository.NewRepository(dbPool)
-	svc := service.NewService(logger, db, maker, mailer)
+	svc := service.NewService(logger, db, maker)
 	ah := handler.NewGaatServer(svc, maker)
 	ginLambda = ginadapter.New(ah.R)
 }

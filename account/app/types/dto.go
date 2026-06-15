@@ -11,6 +11,12 @@ type ServiceResult struct {
 	Data    any    `json:"data"`
 }
 
+type EmailPayload struct {
+	Email   string `json:"Email"`
+	Subject string `json:"Subject"`
+	Content string `json:"Content"`
+}
+
 type UpdateInput struct {
 	FirstName     string `json:"first_name"`
 	LastName      string `json:"last_name"`

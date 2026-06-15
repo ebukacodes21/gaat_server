@@ -4,12 +4,11 @@ import (
 	repository "app/repository/sqlc"
 	"app/types"
 	"app/utils"
-	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"log"
 	"math"
 	"os"
@@ -17,9 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
+	msgTypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
@@ -27,13 +27,11 @@ import (
 type Service struct {
 	logger    *zap.Logger
 	snsClient *sns.Client
-	s3Bucket  *s3.Client
 	repo      repository.DatabaseContract
 	maker     utils.TokenMaker
-	mailer    utils.Mailer
 }
 
-func NewService(logger *zap.Logger, repo repository.DatabaseContract, maker utils.TokenMaker, mailer utils.Mailer) GaatService {
+func NewService(logger *zap.Logger, repo repository.DatabaseContract, maker utils.TokenMaker) GaatService {
 	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(os.Getenv("APP_AWS_REGION")))
 	if err != nil {
 		logger.Error("unable to load AWS configuration", zap.Any("err", err))
@@ -41,15 +39,11 @@ func NewService(logger *zap.Logger, repo repository.DatabaseContract, maker util
 	}
 
 	snsClient := sns.NewFromConfig(cfg)
-	s3Bucket := s3.NewFromConfig(cfg)
-
 	return &Service{
 		logger:    logger,
 		snsClient: snsClient,
-		s3Bucket:  s3Bucket,
 		repo:      repo,
 		maker:     maker,
-		mailer:    mailer,
 	}
 }
 
@@ -91,9 +85,13 @@ func (s *Service) RegisterAccount(ctx context.Context, input *types.CreateUserIn
 				<p style="font-size: 12px; color: #A39990;">This code expires on %s.</p>
 			`, u.FirstName, u.VerificationCode.String, expiry.Format("02 Jan 2006 15:04 PM"))
 			action := ""
-			content := fmt.Sprintf(utils.EmailTemplate, title, body, action)
+			content, err := utils.RenderEmailTemplate(title, body, action)
+			if err != nil {
+				s.logger.Error("failed to render email template", zap.Error(err))
+				return nil
+			}
 
-			if err := s.mailer.SendMail("Welcome Mail", content, []string{u.Email}, nil, nil, nil); err != nil {
+			if err := s.publishEmail("Welcome Mail", content, u.Email); err != nil {
 				s.logger.Error("failed to send email %v", zap.Error(err))
 			}
 			return nil
@@ -182,8 +180,10 @@ func (s *Service) ResendOTP(ctx context.Context, email string) (*types.ServiceRe
 
 	action := ""
 
-	// 3. Assemble using your base email template
-	content := fmt.Sprintf(utils.EmailTemplate, title, body, action)
+	content, err := utils.RenderEmailTemplate(title, body, action)
+	if err != nil {
+		return nil, utils.NewInternalError("failed to render email template", err)
+	}
 
 	_, err = s.repo.UpdateUser(ctx, repository.UpdateUserParams{
 		VerificationCode:          sql.NullString{String: code, Valid: true},
@@ -195,7 +195,7 @@ func (s *Service) ResendOTP(ctx context.Context, email string) (*types.ServiceRe
 		return nil, utils.NewInternalError("unable to update verification params", err)
 	}
 
-	if err := s.mailer.SendMail("Resend Mail", content, []string{user.Email}, nil, nil, nil); err != nil {
+	if err := s.publishEmail("Resend Mail", content, user.Email); err != nil {
 		s.logger.Error("error sending email: %v", zap.Error(err))
 	}
 
@@ -287,9 +287,10 @@ func (s *Service) Forgot(ctx context.Context, email string) (*types.ServiceResul
     </div>
 	`, resetURL)
 
-	content := fmt.Sprintf(utils.EmailTemplate, title, body, action)
-
-	if err := s.mailer.SendMail("Password Reset Request", content, []string{user.Email}, nil, nil, nil); err != nil {
+	content, err := utils.RenderEmailTemplate(title, body, action)
+	if err != nil {
+		s.logger.Error("failed to render email template", zap.Error(err))
+	} else if err := s.publishEmail("Password Reset Request", content, user.Email); err != nil {
 		s.logger.Error("failed sending password reset email", zap.Error(err))
 	}
 
@@ -1334,7 +1335,7 @@ func (s *Service) CreateStaff(ctx context.Context, req types.CreateStaffRequest)
         </div>
     `, req.Email, password, loginURL)
 
-	if err := s.mailer.SendMail("Welcome Mail", content, []string{req.Email}, nil, nil, nil); err != nil {
+	if err := s.publishEmail("Welcome Mail", content, req.Email); err != nil {
 		s.logger.Error("unable to send email to staff", zap.Error(err))
 	}
 
@@ -1554,35 +1555,12 @@ func (s *Service) sendLoanEmail(loan repository.Loan, status string, actionLink 
 		)
 	}
 
-	tmpl, err := template.New("email").Parse(utils.EmailTemplate)
+	content, err := utils.RenderEmailTemplate(title, bodyContent, action)
 	if err != nil {
-		return fmt.Errorf("failed to parse email template: %w", err)
+		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
-	data := struct {
-		Title  string
-		Body   template.HTML
-		Action template.HTML
-	}{
-		Title:  title,
-		Body:   template.HTML(bodyContent),
-		Action: template.HTML(action),
-	}
-
-	var rendered bytes.Buffer
-
-	if err := tmpl.Execute(&rendered, data); err != nil {
-		return fmt.Errorf("failed to execute email template: %w", err)
-	}
-
-	return s.mailer.SendMail(
-		title,
-		rendered.String(),
-		[]string{loan.Email},
-		nil,
-		nil,
-		nil,
-	)
+	return s.publishEmail(title, content, loan.Email)
 
 }
 
@@ -1650,36 +1628,52 @@ func (s *Service) sendDepositEmail(deposit repository.Deposit, status string, ac
 		)
 	}
 
-	tmpl, err := template.New("email").Parse(utils.EmailTemplate)
+	content, err := utils.RenderEmailTemplate(title, bodyContent, action)
 	if err != nil {
-		return fmt.Errorf("failed to parse email template: %w", err)
+		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
-	data := struct {
-		Title  string
-		Body   template.HTML
-		Action template.HTML
-	}{
-		Title:  title,
-		Body:   template.HTML(bodyContent),
-		Action: template.HTML(action),
+	return s.publishEmail(title, content, deposit.Email)
+
+}
+
+func (s *Service) publishEmail(subject, content, email string) error {
+	payload, err := json.Marshal(types.EmailPayload{
+		Email:   email,
+		Subject: subject,
+		Content: content,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal email payload: %w", err)
 	}
 
-	var rendered bytes.Buffer
-
-	if err := tmpl.Execute(&rendered, data); err != nil {
-		return fmt.Errorf("failed to execute email template: %w", err)
+	topic := os.Getenv("GAAT_NOTIFICATION_SNS_TOPIC")
+	if topic == "" {
+		return fmt.Errorf("GAAT_NOTIFICATION_SNS_TOPIC is not configured")
 	}
 
-	return s.mailer.SendMail(
-		title,
-		rendered.String(),
-		[]string{deposit.Email},
-		nil,
-		nil,
-		nil,
-	)
+	return s.publisher(string(payload), "SEND_EMAIL", topic)
+}
 
+func (s *Service) publisher(message, filter, topic string) error {
+	input := &sns.PublishInput{
+		Message:  aws.String(message),
+		TopicArn: aws.String(topic),
+		MessageAttributes: map[string]msgTypes.MessageAttributeValue{
+			"actionType": {
+				DataType:    aws.String("String"),
+				StringValue: aws.String(filter),
+			},
+		},
+	}
+
+	_, err := s.snsClient.Publish(context.Background(), input)
+	if err != nil {
+		return err
+	}
+
+	s.logger.Info("message sent to notification SNS topic", zap.String("topic", topic), zap.String("message", message))
+	return nil
 }
 
 func mapLoan(loan repository.Loan) *types.Loan {

@@ -1,0 +1,20 @@
+{
+  "Records": [
+    {
+      "messageId": "local-test-message",
+      "receiptHandle": "local-receipt-handle",
+      "body": "{\"Type\":\"Notification\",\"MessageId\":\"local-sns-message\",\"TopicArn\":\"arn:aws:sns:us-east-1:135808954548:GaatNotificationTopic\",\"Message\":\"{\\\"Email\\\":\\\"test@example.com\\\",\\\"Subject\\\":\\\"Test Email\\\",\\\"Content\\\":\\\"<p>Hello from local SQS invoke.</p>\\\"}\",\"Timestamp\":\"2026-06-15T12:00:00.000Z\",\"MessageAttributes\":{\"actionType\":{\"Type\":\"String\",\"Value\":\"SEND_EMAIL\"}}}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1718452800000",
+        "SenderId": "local",
+        "ApproximateFirstReceiveTimestamp": "1718452800000"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "local",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:135808954548:GaatNotificationQueue",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

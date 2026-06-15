@@ -12,96 +12,10 @@ import (
 	"github.com/jordan-wright/email"
 )
 
-var (
-	// smtpAuthAddr   = "smtp.gmail.com"
-	// smtpServerAddr = "smtp.gmail.com:465"
-
-	smtpAuthAddr   = os.Getenv("SMTP_AUTH_ADDR")
-	smtpServerAddr = os.Getenv("SMTP_SERVER_ADDR")
+const (
+	smtpAuthAddr   = "smtp.gmail.com"
+	smtpServerAddr = "smtp.gmail.com:465"
 )
-
-const EmailTemplate = `
-<!DOCTYPE html>
-
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#121212;font-family:Arial,Helvetica,sans-serif;">
-
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#121212;padding:40px 20px;">
-    <tr>
-        <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0"
-               style="background-color:#1A1816;border-radius:12px;overflow:hidden;">
-
-            <!-- Header -->
-            <tr>
-                <td align="center"
-                    style="padding:30px;border-bottom:1px solid #2A2622;">
-                    <h1 style="margin:0;color:#E6A15C;font-size:24px;">
-                        GAAT Investment Limited
-                    </h1>
-                </td>
-            </tr>
-
-            <!-- Title -->
-            <tr>
-                <td style="padding:30px 30px 10px 30px;">
-                    <h2 style="margin:0;color:#FFFFFF;font-size:22px;">
-                        {{.Title}}
-                    </h2>
-                </td>
-            </tr>
-
-            <!-- Body -->
-            <tr>
-                <td style="padding:10px 30px 20px 30px;
-                           color:#E6E1DC;
-                           font-size:15px;
-                           line-height:1.7;">
-                    {{.Body}}
-                </td>
-            </tr>
-
-            <!-- Action -->
-            {{if .Action}}
-            <tr>
-                <td align="center" style="padding:10px 30px 30px 30px;">
-                    {{.Action}}
-                </td>
-            </tr>
-            {{end}}
-
-            <!-- Footer -->
-            <tr>
-                <td align="center"
-                    style="padding:20px;
-                           border-top:1px solid #2A2622;
-                           background-color:#151311;">
-                    <p style="margin:0;color:#8C8176;font-size:12px;">
-                        GAAT Investment Limited
-                    </p>
-
-                    <p style="margin:8px 0 0 0;color:#6D655D;font-size:11px;">
-                        © 2026 GAAT Investment Limited. All rights reserved.
-                    </p>
-                </td>
-            </tr>
-
-        </table>
-
-    </td>
-</tr>
-
-</table>
-
-</body>
-</html>
-
-`
 
 type Mailer interface {
 	SendMail(subject, content string, to, cc, bcc, attachFiles []string) error
@@ -113,7 +27,7 @@ type GMailer struct {
 	fromEmailPassword string
 }
 
-func NewGAATMailer(name, address, password string) Mailer {
+func NewGMailer(name, address, password string) Mailer {
 	return &GMailer{name: name, fromEmailAddress: address, fromEmailPassword: password}
 }
 
