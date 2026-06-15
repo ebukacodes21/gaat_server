@@ -53,8 +53,9 @@ func (r *Repository) CreateUserAccountTx(ctx context.Context, args CreateAccount
 	return u, err
 }
 
-func (r *Repository) ManageDepositTx(ctx context.Context, args ManageDepositTxParams) error {
-	return r.execTx(ctx, func(tx *Queries) error {
+func (r *Repository) ManageDepositTx(ctx context.Context, args ManageDepositTxParams) (Deposit, error) {
+	var deposit Deposit
+	err := r.execTx(ctx, func(tx *Queries) error {
 		id, err := utils.ParseUUID(args.DepositID)
 		if err != nil {
 			return err
@@ -63,7 +64,7 @@ func (r *Repository) ManageDepositTx(ctx context.Context, args ManageDepositTxPa
 		log.Print(id, "========================")
 
 		// get deposit
-		deposit, err := tx.GetDepositByID(ctx, id)
+		deposit, err = tx.GetDepositByID(ctx, id)
 		if err != nil {
 			return utils.NewInternalError("failed to fetch deposit", err)
 		}
@@ -119,6 +120,8 @@ func (r *Repository) ManageDepositTx(ctx context.Context, args ManageDepositTxPa
 		if err != nil {
 			return utils.NewInternalError("failed to update deposit", err)
 		}
+
+		deposit.Status = args.Action
 
 		// only process repayment logic when approved
 		if args.Action != "approved" {
@@ -225,4 +228,5 @@ func (r *Repository) ManageDepositTx(ctx context.Context, args ManageDepositTxPa
 			Status:                           status,
 		})
 	})
+	return deposit, err
 }

@@ -1187,6 +1187,19 @@ func (s *Service) GetDeposits(ctx context.Context, page int32, pageSize int32) (
 }
 
 func (s *Service) ManageDeposit(ctx context.Context, req types.ManageInput) error {
+	id, err := utils.ParseUUID(req.ID)
+	if err != nil {
+		return err
+	}
+
+	deposit, err := s.repo.GetDepositByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return utils.NewNotFoundError("deposit not found", err)
+		}
+		return utils.NewInternalError("failed to fetch deposit", err)
+	}
+
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 
 	valid := map[string]struct{}{
@@ -1202,15 +1215,25 @@ func (s *Service) ManageDeposit(ctx context.Context, req types.ManageInput) erro
 		)
 	}
 
-	log.Print("here", "=========================")
-	err := s.repo.ManageDepositTx(ctx, repository.ManageDepositTxParams{
+	current := strings.ToLower(strings.TrimSpace(deposit.Status))
+	if current == action {
+		return nil
+	}
+
+	deposit, err = s.repo.ManageDepositTx(ctx, repository.ManageDepositTxParams{
 		DepositID: req.ID,
 		Action:    action,
 	})
-
 	if err != nil {
 		return utils.NewInternalError(fmt.Sprintf("failed to manage deposit: %s", err.Error()), err)
 	}
+
+	link := fmt.Sprintf("%s/dashboard", os.Getenv("FRONTEND_URL"))
+	go func() {
+		if err := s.sendDepositEmail(deposit, action, link); err != nil {
+			s.logger.Error("unable to send deposit mail", zap.Error(err))
+		}
+	}()
 
 	return nil
 }
